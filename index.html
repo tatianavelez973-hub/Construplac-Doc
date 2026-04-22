@@ -180,7 +180,7 @@ main{padding:24px;max-width:1200px;margin:0 auto}
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="2.2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
   <h1>Gestor Documentación Subcontratas · Construplac Mallorca</h1>
   <span class="date-hdr" id="today-date"></span>
-  <div class="sync-badge offline" id="sync-badge" onclick="openSetup()" title="Haz clic para configurar la sincronización">
+  <div class="sync-badge offline" id="sync-badge" title="Estado de sincronización">
     <div class="sync-dot"></div>
     <span id="sync-label">Sin sincronización</span>
   </div>
@@ -474,7 +474,6 @@ let pendingFile = null;
 let isSaving = false;
 
 // ─── localStorage helpers ───
-function getStoredConfig(){ return null; } // config ya incrustada en FIREBASE_CONFIG
 function loadLocal(){
   try{ companies = JSON.parse(localStorage.getItem('sc_companies')||'null') || JSON.parse(JSON.stringify(DEFAULT_COMPANIES)); }
   catch(e){ companies = JSON.parse(JSON.stringify(DEFAULT_COMPANIES)); }
@@ -514,11 +513,6 @@ async function saveState(){
       setSyncStatus('offline','Error al guardar');
     }
   }
-}
-
-// ─── Firebase ───
-function getStoredConfig(){
-  try{ return JSON.parse(localStorage.getItem('fb_config')||'null'); } catch(e){ return null; }
 }
 
 function startListeners(){
