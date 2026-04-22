@@ -418,6 +418,8 @@ const DEFAULT_COMPANIES = [
   {id:'zirar',      name:'ZIRAR ALBAÑILERÍA',                 type:'Empresa',  contact:'',                                   cif:'',phone:'',email:'',activity:'Albañilería',        workers:['KHALID','ABDELKARIM','YASSINE SALHI','BELOU ALIABDERRAZAK','ELOUAIOZI KAMAL','KARIM MIDAOUI']},
   {id:'dralia',     name:'DRALIA',                            type:'Empresa',  contact:'',                                   cif:'',phone:'',email:'',activity:'',                  workers:[]},
   {id:'abderrahim', name:'ABDERRAHIM (Serveis Forestals)',    type:'Empresa',  contact:'',                                   cif:'',phone:'',email:'',activity:'Servicios forestales',workers:[]},
+  {id:'construplac', name:'CONSTRUPLAC',                      type:'Autónomo', contact:'',                                   cif:'',phone:'',email:'',activity:'Construcción',
+   workers:['SAMUEL OFORI','JHOVANY MENESES','JEFERSON JOYAS SAMBONI','JESUS JONATHAN ARBIETO','KAMAL HAJJAT','MUHAMAD BAHIR BIBI','JORGE TAMASI','OSCAR SALCEDO MOYA','JAMES GLEN LOPEZ','ABDELAZIZ','LUIS FERNANDO MARTINEZ VASCO','MUHAMAD BEGUM','RAMIRO CURZ PINTO','ABDELJAJIL JHIDER','SINFORIANO ROJAS TORRICO','MOHAMED KHARMICH','ABDELLAJIL','DARIO VIERA GOMEZ','DAME DIOP','AHMED BIBI KHAN','HAIDER ALI','RAZA CHATHTA ADMAD','JAIRO CORREA MUNGUIA']},
 ];
 
 const DOCS_EMPRESA = [
@@ -476,6 +478,10 @@ function getStoredConfig(){ return null; } // config ya incrustada en FIREBASE_C
 function loadLocal(){
   try{ companies = JSON.parse(localStorage.getItem('sc_companies')||'null') || JSON.parse(JSON.stringify(DEFAULT_COMPANIES)); }
   catch(e){ companies = JSON.parse(JSON.stringify(DEFAULT_COMPANIES)); }
+  // Merge: add any new DEFAULT_COMPANIES not yet in loaded list
+  DEFAULT_COMPANIES.forEach(def=>{
+    if(!companies.find(c=>c.id===def.id)) companies.push(JSON.parse(JSON.stringify(def)));
+  });
   try{ docState = JSON.parse(localStorage.getItem('sc_docs')||'{}'); }
   catch(e){ docState={}; }
   // Rebuild meta from state
@@ -521,10 +527,17 @@ function startListeners(){
   db.collection('subcontratas').doc('companies').onSnapshot(snap=>{
     if(snap.exists){
       const data=snap.data();
-      if(data.list && JSON.stringify(data.list)!==JSON.stringify(companies)){
-        companies=data.list;
-        localStorage.setItem('sc_companies',JSON.stringify(companies));
-        if(!isSaving) safeRerender();
+      if(data.list){
+        const loaded=data.list;
+        // Merge: add any DEFAULT_COMPANIES not yet in Firebase data
+        DEFAULT_COMPANIES.forEach(def=>{
+          if(!loaded.find(c=>c.id===def.id)) loaded.push(JSON.parse(JSON.stringify(def)));
+        });
+        if(JSON.stringify(loaded)!==JSON.stringify(companies)){
+          companies=loaded;
+          localStorage.setItem('sc_companies',JSON.stringify(companies));
+          if(!isSaving) safeRerender();
+        }
       }
     }
     setSyncStatus('online','Sincronizado ✓');
@@ -724,7 +737,7 @@ function openDetail(cid){
   document.getElementById('detail-kpis').innerHTML=`${s.ok>0?`<div class="pill ok">✓ ${s.ok} OK</div>`:''}${s.warn>0?`<div class="pill warn">⚠ ${s.warn} por vencer</div>`:''}${s.bad>0?`<div class="pill bad">✗ ${s.bad} vencidos</div>`:''}${s.miss>0?`<div class="pill miss">· ${s.miss} pendientes</div>`:''}`;
   const contr=DOCS_EMPRESA.filter(d=>d[4]==='contratacion'), oper=DOCS_EMPRESA.filter(d=>d[4]==='operacion');
   let html=buildDocSection(c,'Documentos de contratación',contr,null)+buildDocSection(c,'Documentos de operación',oper,null);
-  c.workers.forEach(w=>{ html+=buildDocSection(c,`👷 ${w}`,DOCS_TRABAJADOR,w); });
+  c.workers.forEach(w=>{ html+=buildDocSection(c,`👷 ${w}`,DOCS_TRABAJADOR,w,c.id); });
   document.getElementById('detail-sections').innerHTML=html;
   ['dashboard','empresas','alertas'].forEach(t=>document.getElementById('tab-'+t).classList.add('hidden'));
   document.getElementById('detail-view').classList.remove('hidden');
@@ -736,7 +749,7 @@ function openDetail(cid){
   });
 }
 
-function buildDocSection(c,title,docs,worker){
+function buildDocSection(c,title,docs,worker,ownerCid){
   let ok=0,bad=0,warn=0,miss=0;
   docs.forEach(([id,,per])=>{ const key=worker?worker+'::'+id:id; const st=getDocStatus(c.id,key,per); if(st==='OK')ok++;else if(st==='VENCIDO')bad++;else if(st==='POR_VENCER')warn++;else miss++; });
   const bs=bad>0?'background:#fef2f2;color:#dc2626':warn>0?'background:#fffbeb;color:#d97706':miss>0?'background:#f9fafb;color:#6b7280':'background:#f0fdf4;color:#16a34a';
@@ -750,12 +763,31 @@ function buildDocSection(c,title,docs,worker){
     const perTag=per==='Mensual'?`<span class="period-tag tag-mensual">${per}</span>`:`<span class="period-tag">${per}</span>`;
     const emHtml=rec?.emission?`<span style="font-size:11px;color:#374151">✉ ${fmtDate(rec.emission)}</span>`:'';
     let fileHtml='';
-    if(rec?.fileName&&rec?.fileData){ const bc=fileBadgeClass(rec.fileType); fileHtml=`<span class="file-badge ${bc}" onclick="viewFile('${c.id}','${key.replace(/'/g,"\\'")}')">${fileBadgeLabel(rec.fileType)} ${rec.fileName.length>20?rec.fileName.slice(0,18)+'…':rec.fileName}</span>`; }
+    if(rec?.fileName){ const bc=fileBadgeClass(rec.fileType); const hasLocal=!!rec?.fileData; fileHtml=`<span class="file-badge ${bc}" onclick="viewFile('${c.id}','${key.replace(/'/g,"\\'")}')">${fileBadgeLabel(rec.fileType)} ${rec.fileName.length>20?rec.fileName.slice(0,18)+'…':rec.fileName}${hasLocal?'':' ☁'}</span>`; }
     const obsHtml=rec?.notes?`<span class="obs-text" title="${rec.notes}">${rec.notes}</span>`:note?`<span class="obs-text" style="color:#d1d5db">${note}</span>`:'';
     const sk=key.replace(/'/g,"\\'"), sn=name.replace(/'/g,"\\'"), sw=worker?`'${worker.replace(/'/g,"\\'")}'`:'null';
     return`<tr class="${rowCls}"><td><button class="add-btn" onclick="openEditModal('${c.id}','${sk}','${sn}','${per}',${sw})">+</button></td><td>${statusIcon(st)}</td><td>${expHtml}</td><td><span style="font-weight:600;font-size:13px">${name}</span><br><span>${perTag} ${emHtml}</span></td><td><div style="display:flex;flex-direction:column;gap:4px">${fileHtml}${obsHtml}</div></td></tr>`;
   }).join('');
-  return`<div class="doc-section"><div class="doc-section-hdr"><span style="font-size:16px">📋</span><span style="font-size:14px;font-weight:700;flex:1">${title}</span><span class="section-badge" style="${bs}">${bt}</span><svg class="section-chevron open" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2.5" stroke-linecap="round"><polyline points="18 15 12 9 6 15"/></svg></div><div class="doc-section-body"><table class="doc-table"><thead><tr><th style="width:38px"></th><th style="width:34px">Est.</th><th style="width:155px">Fecha Cad.</th><th>Documento</th><th>Archivo / Notas</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  const delWorkerBtn=worker&&ownerCid?`<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:none;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;margin-right:6px" onclick="event.stopPropagation();deleteWorker('${ownerCid}','${worker.replace(/'/g,"\'")}')" title="Eliminar trabajador">🗑 Eliminar</button>`:'';
+  return`<div class="doc-section"><div class="doc-section-hdr"><span style="font-size:16px">📋</span><span style="font-size:14px;font-weight:700;flex:1">${title}</span>${delWorkerBtn}<span class="section-badge" style="${bs}">${bt}</span><svg class="section-chevron open" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2.5" stroke-linecap="round"><polyline points="18 15 12 9 6 15"/></svg></div><div class="doc-section-body"><table class="doc-table"><thead><tr><th style="width:38px"></th><th style="width:34px">Est.</th><th style="width:155px">Fecha Cad.</th><th>Documento</th><th>Archivo / Notas</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+
+async function deleteWorker(cid, workerName){
+  if(!confirm(`¿Eliminar al trabajador "${workerName}" y TODOS sus documentos?`)) return;
+  isSaving=true;
+  const c=companies.find(x=>x.id===cid);
+  if(!c){ isSaving=false; return; }
+  c.workers=c.workers.filter(w=>w!==workerName);
+  // Delete all doc entries for this worker
+  const prefix=cid+'::'+workerName+'::';
+  Object.keys(docState).filter(k=>k.startsWith(prefix)).forEach(k=>{
+    // Also remove from Firebase files
+    if(isFirebaseReady && db){ try{ db.collection('subcontratas_files').doc(k.replace(/[^a-zA-Z0-9_-]/g,'_')).delete(); }catch(e){} }
+    delete docState[k];
+  });
+  await saveState();
+  isSaving=false;
+  openDetail(cid);
 }
 
 function closeDetail(){
@@ -825,7 +857,20 @@ async function saveDoc(e){
       fileType:pendingFile?pendingFile.type:(prev.fileType||''),
     };
   }
+  // Capture file BEFORE closeEditModal nulls pendingFile
+  const fileToSync = pendingFile ? {...pendingFile} : null;
   closeEditModal();
+  // Save file to Firebase so other devices can access it
+  if(fileToSync && isFirebaseReady && db){
+    try{
+      const safeKey=k.replace(/[^a-zA-Z0-9_-]/g,'_');
+      await db.collection('subcontratas_files').doc(safeKey).set({
+        fileData: fileToSync.data,
+        fileType: fileToSync.type||'',
+        fileName: fileToSync.name||''
+      });
+    } catch(e){ console.warn('File sync to Firebase failed:', e.message); }
+  }
   await saveState();
   isSaving=false;
   if(currentCompanyId) openDetail(currentCompanyId); else renderAll();
@@ -834,9 +879,12 @@ async function saveDoc(e){
 async function clearDoc(){
   if(!editCtx||!confirm('¿Eliminar todos los datos de este documento?')) return;
   isSaving=true;
+  const delKey=(editCtx.cid+'::'+editCtx.key).replace(/[^a-zA-Z0-9_-]/g,'_');
   delete docState[editCtx.cid+'::'+editCtx.key];
   closeEditModal();
   await saveState();
+  // Also remove file from Firebase
+  if(isFirebaseReady && db){ try{ await db.collection('subcontratas_files').doc(delKey).delete(); }catch(e){} }
   isSaving=false;
   if(currentCompanyId) openDetail(currentCompanyId); else renderAll();
 }
@@ -844,8 +892,24 @@ async function clearDoc(){
 // ═══════════════════════════════════════════════════════
 // FILE VIEWER
 // ═══════════════════════════════════════════════════════
-function viewFile(cid,key){
-  const rec=getDocRec(cid,key); if(!rec?.fileData) return;
+async function viewFile(cid,key){
+  let rec=getDocRec(cid,key); if(!rec?.fileName) return;
+  // If no local fileData, try to load from Firebase
+  if(!rec.fileData && isFirebaseReady && db){
+    setSyncStatus('syncing','Cargando archivo…');
+    try{
+      const safeKey=(cid+'::'+key).replace(/[^a-zA-Z0-9_-]/g,'_');
+      const snap=await db.collection('subcontratas_files').doc(safeKey).get();
+      if(snap.exists){
+        const fdata=snap.data();
+        rec={...rec, fileData:fdata.fileData||'', fileType:fdata.fileType||rec.fileType||''};
+        docState[cid+'::'+key]={...docState[cid+'::'+key], fileData:fdata.fileData||'', fileType:fdata.fileType||rec.fileType||''};
+        try{ localStorage.setItem('sc_docs',JSON.stringify(docState)); }catch(e){}
+        setSyncStatus('online','Sincronizado ✓');
+      } else { setSyncStatus('online','Sincronizado ✓'); }
+    } catch(e){ setSyncStatus('offline','Sin conexión'); }
+  }
+  if(!rec?.fileData){ alert('Archivo no disponible en este dispositivo.'); return; }
   document.getElementById('viewer-title').textContent=rec.fileName||'Documento';
   document.getElementById('viewer-sub').textContent=companies.find(c=>c.id===cid)?.name||'';
   const frame=document.getElementById('viewer-frame'),img=document.getElementById('viewer-img'),fallback=document.getElementById('viewer-fallback');
