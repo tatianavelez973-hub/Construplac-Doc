@@ -478,6 +478,10 @@ function getStoredConfig(){ return null; } // config ya incrustada en FIREBASE_C
 function loadLocal(){
   try{ companies = JSON.parse(localStorage.getItem('sc_companies')||'null') || JSON.parse(JSON.stringify(DEFAULT_COMPANIES)); }
   catch(e){ companies = JSON.parse(JSON.stringify(DEFAULT_COMPANIES)); }
+  // Merge: add any new DEFAULT_COMPANIES not yet in loaded list
+  DEFAULT_COMPANIES.forEach(def=>{
+    if(!companies.find(c=>c.id===def.id)) companies.push(JSON.parse(JSON.stringify(def)));
+  });
   try{ docState = JSON.parse(localStorage.getItem('sc_docs')||'{}'); }
   catch(e){ docState={}; }
   // Rebuild meta from state
@@ -523,10 +527,17 @@ function startListeners(){
   db.collection('subcontratas').doc('companies').onSnapshot(snap=>{
     if(snap.exists){
       const data=snap.data();
-      if(data.list && JSON.stringify(data.list)!==JSON.stringify(companies)){
-        companies=data.list;
-        localStorage.setItem('sc_companies',JSON.stringify(companies));
-        if(!isSaving) safeRerender();
+      if(data.list){
+        const loaded=data.list;
+        // Merge: add any DEFAULT_COMPANIES not yet in Firebase data
+        DEFAULT_COMPANIES.forEach(def=>{
+          if(!loaded.find(c=>c.id===def.id)) loaded.push(JSON.parse(JSON.stringify(def)));
+        });
+        if(JSON.stringify(loaded)!==JSON.stringify(companies)){
+          companies=loaded;
+          localStorage.setItem('sc_companies',JSON.stringify(companies));
+          if(!isSaving) safeRerender();
+        }
       }
     }
     setSyncStatus('online','Sincronizado ✓');
@@ -846,17 +857,19 @@ async function saveDoc(e){
       fileType:pendingFile?pendingFile.type:(prev.fileType||''),
     };
   }
+  // Capture file BEFORE closeEditModal nulls pendingFile
+  const fileToSync = pendingFile ? {...pendingFile} : null;
   closeEditModal();
   // Save file to Firebase so other devices can access it
-  if(pendingFile && isFirebaseReady && db){
+  if(fileToSync && isFirebaseReady && db){
     try{
       const safeKey=k.replace(/[^a-zA-Z0-9_-]/g,'_');
       await db.collection('subcontratas_files').doc(safeKey).set({
-        fileData: pendingFile.data,
-        fileType: pendingFile.type||'',
-        fileName: pendingFile.name||''
+        fileData: fileToSync.data,
+        fileType: fileToSync.type||'',
+        fileName: fileToSync.name||''
       });
-    } catch(e){ console.warn('File sync to Firebase failed (too large?):', e.message); }
+    } catch(e){ console.warn('File sync to Firebase failed:', e.message); }
   }
   await saveState();
   isSaving=false;
@@ -885,7 +898,7 @@ async function viewFile(cid,key){
   if(!rec.fileData && isFirebaseReady && db){
     setSyncStatus('syncing','Cargando archivo…');
     try{
-      const safeKey=key.replace(/[^a-zA-Z0-9_-]/g,'_');
+      const safeKey=(cid+'::'+key).replace(/[^a-zA-Z0-9_-]/g,'_');
       const snap=await db.collection('subcontratas_files').doc(safeKey).get();
       if(snap.exists){
         const fdata=snap.data();
